@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/MaksOther/go_test/operator/api/v1alpha1"
@@ -36,6 +37,15 @@ func (r *ManagedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	var err error
 
 	switch nextAction(&database) {
+	case actionAddFinalizer:
+		controllerutil.AddFinalizer(&database, finalizerName)
+		err = r.Update(ctx, &database)
+	case actionDelete:
+		result, err = r.deleteDatabase(ctx, &database)
+	case actionRemoveFinalizer:
+		err = r.removeFinalizer(ctx, &database)
+	case actionAdopt:
+		result, err = r.adoptDatabase(ctx, &database)
 	case actionCreate:
 		result, err = r.createDatabase(ctx, &database)
 	case actionMarkUnknown:
@@ -136,6 +146,58 @@ func (r *ManagedDatabaseReconciler) refreshDatabase(ctx context.Context, databas
 		return ctrl.Result{}, err
 	}
 	return result, nil
+}
+
+func (r *ManagedDatabaseReconciler) adoptDatabase(ctx context.Context, database *v1alpha1.ManagedDatabase) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	beforeAdopt := database.DeepCopy()
+	databaseID := database.Annotations[databaseIDAnnotation]
+
+	external, err := r.Provisioner.GetDatabase(ctx, databaseID)
+	switch {
+	case errors.Is(err, provisioner.ErrNotFound):
+		database.Status.Message = fmt.Sprintf("database %s from annotation %s was not found in the provisioning API",
+			databaseID, databaseIDAnnotation)
+	case err != nil:
+		return ctrl.Result{}, err
+	default:
+		log.Info("adopting existing database", "databaseID", external.ID)
+		database.Status.DatabaseID = external.ID
+		database.Status.State = v1alpha1.StateProvisioning
+		database.Status.Message = "adopted existing database"
+		database.Status.CreateRequestedAt = nil
+	}
+
+	return ctrl.Result{}, r.Status().Patch(ctx, database, client.MergeFrom(beforeAdopt))
+}
+
+func (r *ManagedDatabaseReconciler) deleteDatabase(ctx context.Context, database *v1alpha1.ManagedDatabase) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	databaseID := database.Status.DatabaseID
+
+	err := r.Provisioner.DeleteDatabase(ctx, databaseID)
+	if err != nil && !errors.Is(err, provisioner.ErrNotFound) {
+		beforeDelete := database.DeepCopy()
+		database.Status.State = v1alpha1.StateDeleting
+		database.Status.Message = fmt.Sprintf("failed to delete database %s, will retry: %v", databaseID, err)
+		if patchErr := r.Status().Patch(ctx, database, client.MergeFrom(beforeDelete)); patchErr != nil {
+			log.Error(patchErr, "failed to update status")
+		}
+		return ctrl.Result{}, err
+	}
+
+	log.Info("database deleted", "databaseID", databaseID)
+	controllerutil.RemoveFinalizer(database, finalizerName)
+	return ctrl.Result{}, r.Update(ctx, database)
+}
+
+func (r *ManagedDatabaseReconciler) removeFinalizer(ctx context.Context, database *v1alpha1.ManagedDatabase) error {
+	if database.Status.CreateRequestedAt != nil {
+		logf.FromContext(ctx).Info("removing resource without database ID, a database may be left in the provisioning API",
+			"externalName", externalName(database))
+	}
+	controllerutil.RemoveFinalizer(database, finalizerName)
+	return r.Update(ctx, database)
 }
 
 func externalName(database *v1alpha1.ManagedDatabase) string {
