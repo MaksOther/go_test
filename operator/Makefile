@@ -1,6 +1,6 @@
 CONTROLLER_GEN := go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.22.0
 
-.PHONY: generate install uninstall run
+.PHONY: generate install uninstall run test
 
 generate:
 	$(CONTROLLER_GEN) object paths=./api/...
@@ -14,3 +14,6 @@ uninstall:
 
 run:
 	go run ./cmd
+
+test:
+	go test ./...
