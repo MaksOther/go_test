@@ -1,6 +1,6 @@
 CONTROLLER_GEN := go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.22.0
 
-.PHONY: generate install uninstall
+.PHONY: generate install uninstall run
 
 generate:
 	$(CONTROLLER_GEN) object paths=./api/...
@@ -11,3 +11,6 @@ install: generate
 
 uninstall:
 	kubectl delete -f config/crd
+
+run:
+	go run ./cmd
