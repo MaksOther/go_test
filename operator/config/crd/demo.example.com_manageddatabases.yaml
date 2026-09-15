@@ -1,0 +1,90 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: manageddatabases.demo.example.com
+spec:
+  group: demo.example.com
+  names:
+    kind: ManagedDatabase
+    listKind: ManagedDatabaseList
+    plural: manageddatabases
+    shortNames:
+    - mdb
+    singular: manageddatabase
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.engine
+      name: Engine
+      type: string
+    - jsonPath: .spec.sizeGB
+      name: Size
+      type: integer
+    - jsonPath: .status.state
+      name: State
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              engine:
+                minLength: 1
+                type: string
+                x-kubernetes-validations:
+                - message: engine cannot be changed after creation
+                  rule: self == oldSelf
+              sizeGB:
+                minimum: 1
+                type: integer
+                x-kubernetes-validations:
+                - message: sizeGB cannot be changed, the provisioning API has no resize
+                    operation
+                  rule: self == oldSelf
+            required:
+            - engine
+            - sizeGB
+            type: object
+          status:
+            properties:
+              createRequestedAt:
+                format: date-time
+                type: string
+              databaseID:
+                type: string
+              endpoint:
+                type: string
+              message:
+                type: string
+              state:
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
