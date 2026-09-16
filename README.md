@@ -1,5 +1,38 @@
 # Take-home: ManagedDatabase operator
 
+Managed Database Operator
+Operator code is in `operator/`, design notes in `DECISIONS.md`.
+How to run
+
+```sh
+make up                # cluster + provisioning API
+cd operator
+make install           # generate and apply the CRD
+make run               # controller talks to http://localhost:8080
+
+```
+
+Then in a second terminal
+
+```sh
+kubectl apply -f operator/config/samples/orders.yaml
+kubectl get mdb -w
+kubectl describe mdb orders
+kubectl delete mdb orders
+curl -s localhost:8080/_debug/databases | jq
+
+```
+
+If a resource gets stuck in `Unknown`, look it up in `/_debug/databases` by name - it's `<resource name>-<first 8 chars of UID>` - and adopt it
+
+```sh
+kubectl annotate mdb orders demo.example.com/database-id=db-xxxxxxxx
+
+```
+
+Unit tests: `cd operator && make test`
+
+
 We would much rather see 200 lines you can defend than 2000 you cannot.
 
 ## What you are building
